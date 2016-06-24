@@ -370,6 +370,7 @@ class MusicBot(discord.Client):
 
     async def on_player_play(self, player, entry):
         await self.update_now_playing(entry)
+        self.add_url_to_playlist(player.current_entry.url) # Crappy way to ensure tunes from a playlist get added to the autoplaylist.
         player.skip_state.reset()
 
         channel = entry.meta.get('channel', None)
