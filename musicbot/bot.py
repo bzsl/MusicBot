@@ -413,9 +413,8 @@ class MusicBot(discord.Client):
                 info = await self.downloader.safe_extract_info(player.playlist.loop, song_url, download=False, process=False)
 
                 if not info:
-                    self.autoplaylist.remove(song_url)
-                    self.safe_print("[Info] Removing unplayable song from autoplaylist: %s" % song_url)
-                    write_file(self.config.auto_playlist_file, self.autoplaylist)
+                    self.safe_print("[Info] Song is unplayable: %s" % song_url)
+                    self.remove_url_from_playlist(song_url)
                     continue
 
                 if info.get('entries', None):  # or .get('_type', '') == 'playlist'
@@ -508,6 +507,24 @@ class MusicBot(discord.Client):
     def safe_print(self, content, *, end='\n', flush=True):
         sys.stdout.buffer.write((content + end).encode('utf-8', 'replace'))
         if flush: sys.stdout.flush()
+
+    def add_url_to_playlist(self, song_url):
+        self.autoplaylist = load_file(self.config.auto_playlist_file)
+        if song_url not in self.autoplaylist:
+            self.autoplaylist.append(song_url)
+            write_file(self.config.auto_playlist_file, self.autoplaylist)
+            self.safe_print("[Info] Wrote song to autoplaylist on disk: %s" % song_url)
+        else:
+            self.safe_print("[Info] Song already in playlist: %s" % song_url)
+        
+    def remove_url_from_playlist(self, song_url):
+        self.autoplaylist = load_file(self.config.auto_playlist_file)
+        if song_url in self.autoplaylist:
+            self.autoplaylist.remove(song_url)
+            write_file(self.config.auto_playlist_file, self.autoplaylist)
+            self.safe_print("[Info] Removed song from playlist on disk: %s" % song_url)
+        else:
+            self.safe_print("[Info] Song already absent from playlist: %s" % song_url)
 
     async def send_typing(self, destination):
         try:
@@ -897,13 +914,6 @@ class MusicBot(discord.Client):
         # TODO: Possibly add another check here to see about things like the bandcamp issue
         # TODO: Where ytdl gets the generic extractor version with no processing, but finds two different urls
 
-        if song_url not in self.autoplaylist:
-            self.autoplaylist.append(song_url)
-            self.safe_print("[Info] Writing song to autoplaylist on disk: %s" % song_url)
-            write_file(self.config.auto_playlist_file, self.autoplaylist)
-        else:
-            self.safe_print("[Info] Song already in playlist: %s" % song_url)
-
         if 'entries' in info:
             # I have to do exe extra checks anyways because you can request an arbitrary number of search results
             if not permissions.allow_playlists and ':search' in info['extractor'] and len(info['entries']) > 1:
@@ -1004,6 +1014,7 @@ class MusicBot(discord.Client):
 
             try:
                 entry, position = await player.playlist.add_entry(song_url, channel=channel, author=author)
+                self.add_url_to_playlist(song_url)
 
             except exceptions.WrongEntryTypeError as e:
                 if e.use_url == song_url:
@@ -1441,12 +1452,7 @@ class MusicBot(discord.Client):
 
         if author.id == self.config.owner_id or permissions.instaskip:
             if remove:
-                if player.current_entry.url in self.autoplaylist:
-                    self.safe_print("[Info] Removing song from playlist on disk: %s" % player.current_entry.url)
-                    self.autoplaylist.remove(player.current_entry.url)
-                    write_file(self.config.auto_playlist_file, self.autoplaylist)
-                else:
-                    self.safe_print("[Info] Song already absent from playlist: %s" % player.current_entry.url)
+                self.remove_url_from_playlist(player.current_entry.url)
             else:
                 self.safe_print("[Info] Skipped song, but did not remove from playlist. %s" % player.current_entry.url)
             player.skip()  # check autopause stuff here
@@ -1465,12 +1471,7 @@ class MusicBot(discord.Client):
                               sane_round_int(num_voice * self.config.skip_ratio_required)) - num_skips
 
         if skips_remaining <= 0:
-            if player.current_entry.url in self.autoplaylist:
-                self.safe_print("[Info] Removing song from playlist on disk: %s" % player.current_entry.url)
-                self.autoplaylist.remove(player.current_entry.url)
-                write_file(self.config.auto_playlist_file, self.autoplaylist)
-            else:
-                self.safe_print("[Info] Song already absent from playlist: %s" % player.current_entry.url)
+            self.remove_url_from_playlist(player.current_entry.url)
             player.skip()  # check autopause stuff here
             return Response(
                 'your skip for **{}** was acknowledged.'
