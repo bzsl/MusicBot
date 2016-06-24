@@ -1429,6 +1429,7 @@ class MusicBot(discord.Client):
         Stops playing the current song, and removes it permanently from the playlist.
         """
         await self.stop_song(player, channel, author, message, permissions, voice_channel, True)
+        return Response(':fire:', delete_after=5)
 
     async def stop_song(self, player, channel, author, message, permissions, voice_channel, remove):
 
