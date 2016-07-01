@@ -81,7 +81,8 @@ class Config:
 
         self.blacklist_file = config.get('Files', 'BlacklistFile', fallback=ConfigDefaults.blacklist_file)
         self.auto_playlist_file = config.get('Files', 'AutoPlaylistFile', fallback=ConfigDefaults.auto_playlist_file)
-
+        self.tracklibrary_file = config.get('Files', 'TrackLibraryFile', fallback=ConfigDefaults.tracklibrary_file)
+        
         self.run_checks()
 
 
@@ -190,8 +191,9 @@ class ConfigDefaults:
 
     options_file = 'config/options.ini'
     blacklist_file = 'config/blacklist.txt'
-    auto_playlist_file = 'config/autoplaylist.txt' # this will change when I add playlists
-
+    auto_playlist_file = 'config/autoplaylist.txt' # tracks for the next playthrough. cleared as tracks are played.
+    tracklibrary_file = 'config/tracklibrary.txt' # durable list of all tracks
+    
 # These two are going to be wrappers for the id lists, with add/remove/load/save functions
 # and id/object conversion so types aren't an issue
 class Blacklist:

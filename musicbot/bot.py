@@ -80,6 +80,7 @@ class MusicBot(discord.Client):
 
         self.blacklist = set(load_file(self.config.blacklist_file))
         self.autoplaylist = load_file(self.config.auto_playlist_file)
+        self.tracklibrary = load_file(self.config.tracklibrary_file)
         self.downloader = downloader.Downloader(download_folder='audio_cache')
 
         self.exit_signal = None
@@ -370,7 +371,11 @@ class MusicBot(discord.Client):
 
     async def on_player_play(self, player, entry):
         await self.update_now_playing(entry)
-        self.add_url_to_playlist(player.current_entry.url) # Crappy way to ensure tunes from a playlist get added to the autoplaylist.
+        self.add_url_to_library(player.current_entry.url) # Crappy way to ensure tunes from a playlist get added to the autoplaylist.
+        self.remove_url_from_playlist(player.current_entry.url)
+        if not self.autoplaylist:
+            self.reload_playlist_from_library()
+        
         player.skip_state.reset()
 
         channel = entry.meta.get('channel', None)
@@ -415,7 +420,6 @@ class MusicBot(discord.Client):
 
                 if not info:
                     self.safe_print("[Info] Song is unplayable: %s" % song_url)
-                    self.remove_url_from_playlist(song_url)
                     continue
 
                 if info.get('entries', None):  # or .get('_type', '') == 'playlist'
@@ -509,14 +513,23 @@ class MusicBot(discord.Client):
         sys.stdout.buffer.write((content + end).encode('utf-8', 'replace'))
         if flush: sys.stdout.flush()
 
-    def add_url_to_playlist(self, song_url):
-        self.autoplaylist = load_file(self.config.auto_playlist_file)
-        if song_url not in self.autoplaylist:
-            self.autoplaylist.append(song_url)
-            write_file(self.config.auto_playlist_file, self.autoplaylist)
-            self.safe_print("[Info] Wrote song to autoplaylist on disk: %s" % song_url)
+    def add_url_to_library(self, song_url):
+        self.tracklibrary = load_file(self.config.tracklibrary_file)
+        if song_url not in self.tracklibrary:
+            self.tracklibrary.append(song_url)
+            write_file(self.config.tracklibrary_file, self.tracklibrary)
+            self.safe_print("[Info] Wrote song to tracklibrary on disk: %s" % song_url)
         else:
-            self.safe_print("[Info] Song already in playlist: %s" % song_url)
+            self.safe_print("[Info] Song already in tracklibrary: %s" % song_url)
+        
+    def remove_url_from_library(self, song_url):
+        self.tracklibrary = load_file(self.config.tracklibrary_file)
+        if song_url in self.tracklibrary:
+            self.tracklibrary.remove(song_url)
+            write_file(self.config.tracklibrary_file, self.tracklibrary)
+            self.safe_print("[Info] Removed song from tracklibrary on disk: %s" % song_url)
+        else:
+            self.safe_print("[Info] Song already absent from tracklibrary: %s" % song_url)
         
     def remove_url_from_playlist(self, song_url):
         self.autoplaylist = load_file(self.config.auto_playlist_file)
@@ -526,6 +539,11 @@ class MusicBot(discord.Client):
             self.safe_print("[Info] Removed song from playlist on disk: %s" % song_url)
         else:
             self.safe_print("[Info] Song already absent from playlist: %s" % song_url)
+
+    def reload_playlist_from_library(self):
+        self.autoplaylist = load_file(self.config.tracklibrary_file)
+        write_file(self.config.auto_playlist_file, self.autoplaylist)
+        self.safe_print("[Alert] Reloaded playlist from library!")
 
     async def send_typing(self, destination):
         try:
@@ -1015,7 +1033,7 @@ class MusicBot(discord.Client):
 
             try:
                 entry, position = await player.playlist.add_entry(song_url, channel=channel, author=author)
-                self.add_url_to_playlist(song_url)
+                self.add_url_to_library(song_url)
 
             except exceptions.WrongEntryTypeError as e:
                 if e.use_url == song_url:
@@ -1420,7 +1438,7 @@ class MusicBot(discord.Client):
             
         Stops player the current song, but leaves it in the current playlist for later.
         """
-        await self.stop_song(player, channel, author, message, permissions, voice_channel, False)
+        return await self.stop_song(player, channel, author, message, permissions, voice_channel, False)
         
     async def cmd_purge(self, player, channel, author, message, permissions, voice_channel):
         """
@@ -1429,8 +1447,7 @@ class MusicBot(discord.Client):
 
         Stops playing the current song, and removes it permanently from the playlist.
         """
-        await self.stop_song(player, channel, author, message, permissions, voice_channel, True)
-        return Response(':fire:', delete_after=5)
+        return await self.stop_song(player, channel, author, message, permissions, voice_channel, True)
 
     async def stop_song(self, player, channel, author, message, permissions, voice_channel, remove):
 
@@ -1454,12 +1471,15 @@ class MusicBot(discord.Client):
 
         if author.id == self.config.owner_id or permissions.instaskip:
             if remove:
-                self.remove_url_from_playlist(player.current_entry.url)
+                self.remove_url_from_library(player.current_entry.url)
             else:
                 self.safe_print("[Info] Skipped song, but did not remove from playlist. %s" % player.current_entry.url)
             player.skip()  # check autopause stuff here
             await self._manual_delete_check(message)
-            return
+            if remove:
+                return Response(':fire:', delete_after=5)
+            else:
+                return Response(':track_next:', delete_after=5)
 
         # TODO: ignore person if they're deaf or take them out of the list or something?
         # Currently is recounted if they vote, deafen, then vote
@@ -1473,17 +1493,11 @@ class MusicBot(discord.Client):
                               sane_round_int(num_voice * self.config.skip_ratio_required)) - num_skips
 
         if skips_remaining <= 0:
-            self.remove_url_from_playlist(player.current_entry.url)
             player.skip()  # check autopause stuff here
-            return Response(
-                'your skip for **{}** was acknowledged.'
-                '\nThe vote to skip has been passed.{}'.format(
-                    player.current_entry.title,
-                    ' Next song coming up!' if player.playlist.peek() else ''
-                ),
-                reply=True,
-                delete_after=20
-            )
+            if remove:
+                return Response(':fire:', delete_after=5)
+            else:
+                return Response(':track_next:', delete_after=5)
 
         else:
             # TODO: When a song gets skipped, delete the old x needed to skip messages
