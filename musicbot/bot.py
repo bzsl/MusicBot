@@ -1064,6 +1064,9 @@ class MusicBot(discord.Client):
 
         return Response(reply_text, delete_after=30)
 
+    async def cmd_playthrough(self):
+        return Response("%s tracks left in this playthrough! Next reload has %s tracks." % (len(self.playlist.entries), len(self.tracklibrary.entries)), delete_after=20)
+        
     async def _cmd_play_playlist_async(self, player, channel, author, permissions, playlist_url, extractor_type):
         """
         Secret handler to use the async wizardry to make playlist queuing non-"blocking"
