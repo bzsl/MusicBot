@@ -85,7 +85,7 @@ class MusicBot(discord.Client):
 
         self.exit_signal = None
 
-        if not self.autoplaylist:
+        if not self.autoplaylist and not self.tracklibrary:
             print("Warning: Autoplaylist is empty, disabling.")
             self.config.auto_playlist = False
 
@@ -371,10 +371,7 @@ class MusicBot(discord.Client):
 
     async def on_player_play(self, player, entry):
         await self.update_now_playing(entry)
-        self.add_url_to_library(player.current_entry.url) # Crappy way to ensure tunes from a playlist get added to the autoplaylist.
-        self.remove_url_from_playlist(player.current_entry.url)
-        if not self.autoplaylist:
-            self.reload_playlist_from_library()
+        self.add_url_to_library(player.current_entry.url) # Crappy way to ensure tunes from a playlist get added to the track library.
         
         player.skip_state.reset()
 
@@ -415,7 +412,7 @@ class MusicBot(discord.Client):
     async def on_player_finished_playing(self, player, **_):
         if not player.playlist.entries and not player.current_entry and self.config.auto_playlist:
             while self.autoplaylist:
-                song_url = choice(self.autoplaylist)
+                song_url = self.pop_playlist()
                 info = await self.downloader.safe_extract_info(player.playlist.loop, song_url, download=False, process=False)
 
                 if not info:
@@ -436,8 +433,7 @@ class MusicBot(discord.Client):
                 break
 
             if not self.autoplaylist:
-                print("[Warning] No playable songs in the autoplaylist, disabling.")
-                self.config.auto_playlist = False
+                print("[Warning] No playable songs in the autoplaylist. Reloading.")
 
     async def on_player_entry_added(self, playlist, entry, **_):
         pass
@@ -539,7 +535,19 @@ class MusicBot(discord.Client):
             self.safe_print("[Info] Removed song from playlist on disk: %s" % song_url)
         else:
             self.safe_print("[Info] Song already absent from playlist: %s" % song_url)
+        if not self.autoplaylist:
+            self.reload_playlist_from_library()
 
+    def pop_playlist(self):
+        self.autoplaylist = load_file(self.config.auto_playlist_file)
+        song_url = choice(self.autoplaylist)
+        self.autoplaylist.remove(song_url)
+        write_file(self.config.auto_playlist_file, self.autoplaylist)
+        self.safe_print("[Info] Popped song from playlist and wrote to disk: %s" % song_url)
+        if not self.autoplaylist:
+            self.reload_playlist_from_library()
+        return song_url
+            
     def reload_playlist_from_library(self):
         self.autoplaylist = load_file(self.config.tracklibrary_file)
         write_file(self.config.auto_playlist_file, self.autoplaylist)
@@ -1065,7 +1073,7 @@ class MusicBot(discord.Client):
         return Response(reply_text, delete_after=30)
 
     async def cmd_playthrough(self):
-        return Response("%s tracks left in this playthrough! Next reload has %s tracks." % (len(self.playlist.entries), len(self.tracklibrary.entries)), delete_after=20)
+        return Response("%s tracks left in this playthrough! Next reload has %s tracks." % (len(self.autoplaylist), len(self.tracklibrary)), delete_after=20)
         
     async def _cmd_play_playlist_async(self, player, channel, author, permissions, playlist_url, extractor_type):
         """
