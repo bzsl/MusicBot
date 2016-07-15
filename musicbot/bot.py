@@ -82,7 +82,8 @@ class MusicBot(discord.Client):
         self.autoplaylist = load_file(self.config.auto_playlist_file)
         self.tracklibrary = load_file(self.config.tracklibrary_file)
         self.downloader = downloader.Downloader(download_folder='audio_cache')
-
+        self.shitpostmode = False
+        
         self.exit_signal = None
 
         if not self.autoplaylist and not self.tracklibrary:
@@ -509,23 +510,66 @@ class MusicBot(discord.Client):
         sys.stdout.buffer.write((content + end).encode('utf-8', 'replace'))
         if flush: sys.stdout.flush()
 
+    def safe_print_color(self, color, content, *, end='\n', flush=True):
+        terminator = '\033[0m'
+        if color == 'black':
+            colorTag = '\033[30m'
+        elif color == 'red':
+            colorTag = '\033[31m'
+        elif color == 'green':
+            colorTag = '\033[32m'
+        elif color == 'orange':
+            colorTag = '\033[33m'
+        elif color == 'blue':
+            colorTag = '\033[34m'
+        elif color == 'purple':
+            colorTag = '\033[35m'
+        elif color == 'cyan':
+            colorTag = '\033[36m'
+        elif color == 'lightgrey':
+            colorTag = '\033[37m'
+        elif color == 'darkgrey':
+            colorTag = '\033[90m'
+        elif color == 'lightred':
+            colorTag = '\033[91m'
+        elif color == 'lightgreen':
+            colorTag = '\033[92m'
+        elif color == 'yellow':
+            colorTag = '\033[93m'
+        elif color == 'lightblue':
+            colorTag = '\033[94m'
+        elif color == 'pink':
+            colorTag = '\033[95m'
+        elif color == 'lightcyan':
+            colorTag = '\033[96m'        
+        else:
+            colorTag = ''
+            terminator = ''
+        contentColor = colorTag + content + terminator
+        sys.stdout.buffer.write((contentColor + end).encode('utf-8', 'replace'))
+        if flush: sys.stdout.flush()
+
     def add_url_to_library(self, song_url):
-        self.tracklibrary = load_file(self.config.tracklibrary_file)
-        if song_url not in self.tracklibrary:
+        if song_url in self.tracklibrary:
+            self.safe_print("[Info] Song already in tracklibrary: %s" % song_url)
+        elif self.shitpostmode:
+            self.safe_print("[Info] Shitposting mode is on; did not add to tracklibrary: %s" % song_url)
+        else:
+            self.tracklibrary = load_file(self.config.tracklibrary_file)
             self.tracklibrary.append(song_url)
             write_file(self.config.tracklibrary_file, self.tracklibrary)
             self.safe_print("[Info] Wrote song to tracklibrary on disk: %s" % song_url)
-        else:
-            self.safe_print("[Info] Song already in tracklibrary: %s" % song_url)
         
     def remove_url_from_library(self, song_url):
-        self.tracklibrary = load_file(self.config.tracklibrary_file)
-        if song_url in self.tracklibrary:
+        if song_url not in self.tracklibrary:
+            self.safe_print("[Info] Song already absent from tracklibrary: %s" % song_url)
+        elif self.shitpostmode:
+            self.safe_print("[Info] Shitposting mode is on; did not remove from tracklibrary: %s" % song_url)
+        else:
+            self.tracklibrary = load_file(self.config.tracklibrary_file)
             self.tracklibrary.remove(song_url)
             write_file(self.config.tracklibrary_file, self.tracklibrary)
             self.safe_print("[Info] Removed song from tracklibrary on disk: %s" % song_url)
-        else:
-            self.safe_print("[Info] Song already absent from tracklibrary: %s" % song_url)
         
     def remove_url_from_playlist(self, song_url):
         self.autoplaylist = load_file(self.config.auto_playlist_file)
@@ -874,6 +918,16 @@ class MusicBot(discord.Client):
         except:
             raise exceptions.CommandError('Invalid URL provided:\n{}\n'.format(server_link), expire_in=30)
 
+    async def cmd_shitpost(self, mode):
+        if not mode:
+            return Response("Shitposting mode: %s" % self.shitpostmode, delete_after=10)
+        else:
+            self.shitpostmode = True if mode == "on" else False;
+            if self.shitpostmode:
+                return Response(":poop:")
+            else:
+                return Response(":shower:")
+        
     async def cmd_play(self, player, channel, author, permissions, leftover_args, song_url=None):
         """
         Usage:
@@ -1070,6 +1124,8 @@ class MusicBot(discord.Client):
 
             reply_text %= (btext, position, time_until)
 
+        if self.shitpostmode:
+            reply_text += ' :poop:'
         return Response(reply_text, delete_after=30)
 
     async def cmd_playthrough(self):
@@ -1487,7 +1543,9 @@ class MusicBot(discord.Client):
                 self.safe_print("[Info] Skipped song, but did not remove from playlist. %s" % player.current_entry.url)
             player.skip()  # check autopause stuff here
             await self._manual_delete_check(message)
-            if remove:
+            if self.shitpostmode:
+                return Response(':poop:', delete_after=2)
+            elif remove:
                 return Response(':fire:', delete_after=5)
             else:
                 return Response(':track_next:', delete_after=5)
@@ -1505,7 +1563,9 @@ class MusicBot(discord.Client):
 
         if skips_remaining <= 0:
             player.skip()  # check autopause stuff here
-            if remove:
+            if self.shitpostmode:
+                return Response(':poop:', delete_after=2)
+            elif remove:
                 return Response(':fire:', delete_after=5)
             else:
                 return Response(':track_next:', delete_after=5)
