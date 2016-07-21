@@ -1385,6 +1385,10 @@ class MusicBot(discord.Client):
                 delete_after=30
             )
 
+    async def cmd_link(self, player):
+        if player.current_entry:
+            return Response(player.current_entry.url, delete_after=15)
+            
     async def cmd_summon(self, channel, author, voice_channel):
         """
         Usage:
